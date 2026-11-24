@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#191c18">
+  <title>Repack Lab | Eaglercraft 1.12.2</title>
+  <style>
+    :root { color-scheme:dark; --ink:#f0eee6; --muted:#9b9e91; --page:#191c18; --panel:#222720; --line:#394036; --accent:#c5f36b; --orange:#f39865; --red:#f26f5e; --sans:"Avenir Next",Avenir,"Segoe UI",sans-serif; --mono:"SFMono-Regular",Consolas,"Liberation Mono",monospace; }
+    * { box-sizing:border-box; }
+    body { margin:0; min-width:320px; min-height:100vh; color:var(--ink); background-color:var(--page); background-image:linear-gradient(90deg,transparent 49px,#ffffff08 50px),linear-gradient(#ffffff08 1px,transparent 1px); background-size:50px 50px; font:14px/1.5 var(--sans); }
+    main { width:min(820px,calc(100% - 36px)); margin:0 auto; padding:24px 0 56px; }
+    header { display:flex; align-items:center; justify-content:space-between; gap:16px; padding-bottom:18px; border-bottom:1px solid var(--line); }
+    .brand { display:flex; align-items:center; gap:11px; color:var(--ink); text-decoration:none; }
+    .mark { display:grid; width:36px; height:36px; place-items:center; border:1px solid var(--accent); color:var(--accent); font:700 14px var(--mono); transform:rotate(-5deg); }
+    .brand-name { font:600 17px Georgia,serif; } .brand-sub { color:var(--muted); font-size:11px; }
+    .back-link { color:var(--accent); text-decoration:none; } .back-link:hover { text-decoration:underline; }
+    .eyebrow { color:var(--orange); font:600 10px var(--mono); letter-spacing:.08em; text-transform:uppercase; }
+    h1 { margin:9px 0 12px; font:400 clamp(32px,6vw,48px)/1.05 Georgia,serif; letter-spacing:0; }
+    .intro { max-width:620px; color:var(--muted); }
+    form { margin-top:28px; border-top:1px solid var(--line); }
+    .field { display:grid; grid-template-columns:190px minmax(0,1fr); gap:22px; padding:20px 0; border-bottom:1px solid var(--line); }
+    label,.field-label { font-weight:600; }
+    .field-note { display:block; margin-top:5px; color:var(--muted); font-size:11px; font-weight:400; }
+    input,select { width:100%; min-height:42px; padding:9px 11px; border:1px solid #536044; border-radius:0; background:#20241f; color:var(--ink); font:inherit; }
+    input[type=file] { min-height:48px; padding:6px; }
+    input::file-selector-button { margin-right:12px; padding:8px 11px; border:1px solid var(--line); background:#2b3226; color:var(--accent); cursor:pointer; }
+    input:focus,select:focus,button:focus-visible,a:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+    .actions { display:flex; justify-content:end; padding-top:20px; }
+    button { min-height:43px; padding:0 16px; border:1px solid var(--accent); background:var(--accent); color:#20251a; font:700 14px var(--sans); cursor:pointer; }
+    button:disabled { cursor:wait; opacity:.55; }
+    .notice { margin-top:24px; padding:15px 16px; border-left:2px solid var(--orange); background:#302a21; color:#ead9b9; }
+    progress { display:block; width:100%; height:7px; margin-top:19px; border:0; background:#394036; accent-color:var(--accent); }
+    progress::-webkit-progress-bar { background:#394036; } progress::-webkit-progress-value { background:var(--accent); } progress::-moz-progress-bar { background:var(--accent); }
+    .status { min-height:28px; margin-top:15px; color:var(--muted); } .status.error { color:var(--red); } .status.success { color:var(--accent); }
+    @media(max-width:600px) { main { padding-top:16px; } header { align-items:flex-start; } .field { grid-template-columns:1fr; gap:10px; padding:16px 0; } .actions button { width:100%; } }
+    @media(prefers-reduced-motion:reduce) { *,*::before,*::after { scroll-behavior:auto!important; transition-duration:.01ms!important; } }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <a class="brand" href="./World_Vault.html"><span class="mark" aria-hidden="true">RL</span><span><span class="brand-name">Repack Lab</span><span class="brand-sub">Eaglercraft 1.12.2</span></span></a>
+      <a class="back-link" href="./World_Vault.html">Back to World Vault</a>
+    </header>
+    <section aria-labelledby="page-title">
+      <p class="eyebrow">Experimental packaging</p>
+      <h1 id="page-title">Repack one world</h1>
+      <p class="intro">Choose an Eaglercraft filesystem backup and package one saved world as an EPK archive. The source backup and browser saves are not changed.</p>
+      <form id="repack-form">
+        <div class="field">
+          <label for="backup-file">Filesystem backup<span class="field-note">Choose one of the JSON backups created by World Vault.</span></label>
+          <input id="backup-file" type="file" accept=".json,application/json" required>
+        </div>
+        <div class="field">
+          <label for="world-name">Exact world name<span class="field-note">Copy the name from World Vault, including punctuation and spaces.</span></label>
+          <input id="world-name" type="text" autocomplete="off" placeholder="For example: New World" required>
+        </div>
+        <div class="field">
+          <label for="compression">EPK compression<span class="field-note">Gzip is a practical default.</span></label>
+          <select id="compression"><option value="gzip">Gzip</option><option value="zlib">Zlib</option><option value="none">None</option></select>
+        </div>
+        <div class="actions"><button id="repack-button" type="submit">Build EPK archive</button></div>
+      </form>
+      <p class="notice">This repacks the selected Eaglercraft world files into a generic EPK archive. It does not convert them into a vanilla Java world save, and the archive may not be directly loadable by the game as a world.</p>
+      <progress id="repack-progress" max="100" value="0" aria-label="Backup upload progress" hidden></progress>
+      <p class="status" id="status" role="status" aria-live="polite"></p>
+    </section>
+  </main>
+  <script>
+    "use strict";
+    const form = document.querySelector("#repack-form");
+    const fileInput = document.querySelector("#backup-file");
+    const worldInput = document.querySelector("#world-name");
+    const compressionInput = document.querySelector("#compression");
+    const button = document.querySelector("#repack-button");
+    const status = document.querySelector("#status");
+    const progress = document.querySelector("#repack-progress");
+    const chunkSize = 512 * 1024;
+    const concurrentChunks = 4;
+
+    async function readError(response) {
+      const message = await response.text();
+      try { return JSON.parse(message).error || message; }
+      catch { return message || `Request failed (${response.status}).`; }
+    }
+
+    async function uploadBackup(file, world, compression) {
+      const startResponse = await fetch("/upload/start", {
+        method:"POST",
+        headers:{ "Content-Type":"application/json" },
+        body:JSON.stringify({ total:file.size })
+      });
+      if (!startResponse.ok) throw new Error(await readError(startResponse));
+      const { token } = await startResponse.json();
+      let uploaded = 0;
+      try {
+        for (let batchStart = 0; batchStart < file.size; batchStart += chunkSize * concurrentChunks) {
+          const batch = [];
+          for (let index = 0; index < concurrentChunks; index += 1) {
+            const start = batchStart + index * chunkSize;
+            if (start >= file.size) break;
+            const end = Math.min(start + chunkSize, file.size);
+            batch.push(fetch(`/upload/chunk?token=${encodeURIComponent(token)}`, {
+              method:"POST",
+              headers:{ "Content-Range":`bytes ${start}-${end - 1}/${file.size}` },
+              body:file.slice(start, end)
+            }).then(async (response) => {
+              if (!response.ok) throw new Error(await readError(response));
+              uploaded += end - start;
+              progress.value = Math.round(uploaded / file.size * 100);
+              status.textContent = `Uploading backup: ${progress.value}%`;
+            }));
+          }
+          const results = await Promise.allSettled(batch);
+          const failed = results.find((result) => result.status === "rejected");
+          if (failed) throw failed.reason;
+        }
+        progress.removeAttribute("value");
+        status.textContent = "Upload complete. Extracting files and compiling the EPK on the server…";
+        const query = new URLSearchParams({ token, world, compression });
+        const response = await fetch(`/repack?${query}`, { method:"POST" });
+        if (!response.ok) throw new Error(await readError(response));
+        return { blob:await response.blob(), disposition:response.headers.get("Content-Disposition") };
+      } catch (error) {
+        fetch(`/upload/cancel?token=${encodeURIComponent(token)}`, { method:"DELETE" }).catch(() => {});
+        throw error;
+      }
+    }
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const file = fileInput.files?.[0];
+      const world = worldInput.value;
+      if (!file || !world.trim()) return;
+      button.disabled = true;
+      status.className = "status";
+      progress.hidden = false;
+      progress.max = 100;
+      progress.value = 0;
+      status.textContent = `Uploading ${file.name}…`;
+      try {
+        const result = await uploadBackup(file, world, compressionInput.value);
+        const blob = result.blob;
+        const link = document.createElement("a"); link.href = URL.createObjectURL(blob);
+        link.download = result.disposition?.match(/filename="([^"]+)"/)?.[1] || "eaglercraft-world.epk";
+        link.click(); window.setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+        progress.hidden = true;
+        status.className = "status success";
+        status.textContent = `EPK archive downloaded (${(blob.size / 1024 / 1024).toFixed(2)} MB).`;
+      } catch (error) {
+        progress.hidden = true;
+        status.className = "status error";
+        status.textContent = error.message || "Could not build the EPK archive.";
+      } finally { button.disabled = false; }
+    });
+  </script>
+</body>
+</html>
