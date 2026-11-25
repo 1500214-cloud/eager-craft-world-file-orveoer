@@ -67,13 +67,17 @@ async function summarizeDatabase() {
   return { worlds: [...worlds.entries()], worldFiles, totalBytes, recordCount: records.length };
 }
 
-async function purgeWorlds() {
-  self.postMessage({ type: "status", message: "Deleting saved world files…" });
+async function deleteWorldRecords(worldName = null) {
+  if (worldName !== null && (typeof worldName !== "string" || !worldName || worldName.includes("/"))) {
+    throw new Error("The selected world name is invalid.");
+  }
+  self.postMessage({ type: "status", message: worldName === null ? "Deleting saved world files…" : `Deleting “${worldName}”…` });
   const database = await openDatabase();
   return new Promise((resolve, reject) => {
     let transaction;
     let fileCount = 0;
     const worlds = new Set();
+    let failure = null;
     try {
       transaction = database.transaction(STORE_NAME, "readwrite");
       const request = transaction.objectStore(STORE_NAME).openCursor();
@@ -82,11 +86,26 @@ async function purgeWorlds() {
         if (!cursor) return;
         const path = cursor.value && cursor.value.path;
         const match = typeof path === "string" && path.match(/^eaglercraft\/worlds\/([^/]+)\//);
-        if (path === "worlds_list.txt" || match) {
+        const shouldDeleteWorld = match && (worldName === null || match[1] === worldName);
+        if (shouldDeleteWorld) {
           cursor.delete();
-          if (match) {
-            worlds.add(match[1]);
-            fileCount += 1;
+          worlds.add(match[1]);
+          fileCount += 1;
+        }else if (path === "worlds_list.txt") {
+          if (worldName === null) {
+            cursor.delete();
+          }else {
+            try {
+              const priorNames = new TextDecoder().decode(bytesFromData(cursor.value.data));
+              const names = priorNames.split(/\r?\n/).map(name => name.trim()).filter(name => name && name !== worldName);
+              if (names.length !== priorNames.split(/\r?\n/).map(name => name.trim()).filter(Boolean).length) {
+                cursor.update({ path, data: new TextEncoder().encode(names.length ? names.join("\n") + "\n" : "").buffer });
+              }
+            }catch(error) {
+              failure = error;
+              transaction.abort();
+              return;
+            }
           }
         }
         cursor.continue();
@@ -98,8 +117,7 @@ async function purgeWorlds() {
     }
     transaction.oncomplete = () => {
       database.close();
-      self.postMessage({ type: "purged", worldCount: worlds.size, fileCount });
-      resolve();
+      resolve({ worldCount: worlds.size, fileCount });
     };
     transaction.onerror = () => {
       database.close();
@@ -107,7 +125,7 @@ async function purgeWorlds() {
     };
     transaction.onabort = () => {
       database.close();
-      reject(transaction.error || new Error("The saved-world purge was interrupted."));
+      reject(failure || transaction.error || new Error("The saved-world deletion was interrupted."));
     };
   });
 }
@@ -271,7 +289,11 @@ self.addEventListener("message", async ({ data }) => {
     if (data.type === "export") await exportBackup();
     else if (data.type === "inspect") await inspectBackup(data.file);
     else if (data.type === "restore") await restoreBackup();
-    else if (data.type === "purge-worlds") await purgeWorlds();
+    else if (data.type === "purge-worlds") {
+      self.postMessage({ type: "purged", ...await deleteWorldRecords() });
+    }else if (data.type === "delete-world") {
+      self.postMessage({ type: "world-deleted", name: data.name, ...await deleteWorldRecords(data.name) });
+    }
     else if (data.type === "summarize") self.postMessage({ type: "summarized", summary: await summarizeDatabase() });
   } catch (error) {
     self.postMessage({ type: "error", message: error.message || "The background filesystem task failed." });

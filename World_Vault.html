@@ -39,8 +39,9 @@
     .stat-label { color:var(--muted); font:10px var(--mono); text-transform:uppercase; }
     .section-head { display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:12px; } h2 { margin:0; font:400 21px/1.2 Georgia,serif; }
     .world-count { color:var(--muted); font:11px var(--mono); } .world-table { border-top:1px solid var(--line); }
-    .world-row { display:grid; grid-template-columns:minmax(180px,1fr) minmax(100px,160px) minmax(90px,130px); align-items:center; gap:14px; min-height:68px; padding:11px 12px; border-bottom:1px solid var(--line); background:#1d211dcb; }
+    .world-row { display:grid; grid-template-columns:minmax(180px,1fr) minmax(100px,160px) minmax(90px,130px) auto; align-items:center; gap:14px; min-height:68px; padding:11px 12px; border-bottom:1px solid var(--line); background:#1d211dcb; }
     .world-name { overflow-wrap:anywhere; font-weight:600; } .world-detail { color:var(--muted); font:11px var(--mono); } .world-size { color:var(--orange); text-align:right; font:11px var(--mono); }
+    .world-delete { min-height:34px; padding:0 10px; }
     .notice,.empty { margin-top:18px; padding:15px 16px; border:1px solid #775d3c; background:#342d21; color:#ead9b9; } .empty { padding:28px 20px; border-color:var(--line); background:#20241f; color:var(--muted); }
     .empty strong { display:block; margin-bottom:5px; color:var(--ink); font:18px Georgia,serif; } .message { min-height:24px; margin-top:16px; color:var(--muted); font-size:12px; }
     .message.error { color:var(--red); } .message.success { color:var(--accent); } .fine-print { margin-top:23px; color:var(--muted); font-size:11px; }
@@ -52,7 +53,7 @@
       .layout { grid-template-columns:1fr; } .rail { gap:18px; padding:16px 18px 0; border-right:0; } .rail-nav { grid-template-columns:1fr 1fr; } .nav-item { justify-content:center; padding:9px; }
       .rail-bottom { display:none; } main { padding:22px 18px 40px; } .topbar { align-items:start; flex-direction:column; } .heading { align-items:start; flex-direction:column; margin-top:26px; }
       .stats { grid-template-columns:1fr 1fr; } .stat:last-child { display:none; } .stat:nth-child(2) { border-left:1px solid var(--line); }
-      .world-row { grid-template-columns:minmax(0,1fr) auto; gap:4px 12px; } .world-detail { grid-column:1; } .world-size { grid-column:2; grid-row:1/span 2; }
+      .world-row { grid-template-columns:minmax(0,1fr) auto; gap:4px 12px; } .world-detail { grid-column:1; } .world-size { grid-column:2; grid-row:1/span 2; } .world-delete { grid-column:2; grid-row:3; }
       .actions { width:100%; } .actions .button { flex:1; }
     }
     @media(prefers-reduced-motion:reduce) { *,*::before,*::after { scroll-behavior:auto!important; transition-duration:.01ms!important; } }
@@ -111,6 +112,12 @@
     <p class="dialog-warning">Close any open game tabs first so they cannot save worlds back after deletion. This cannot be undone; download a backup first if you may want these worlds later.</p>
     <div class="dialog-actions"><button class="button quiet" id="cancel-purge" type="button">Cancel</button><button class="button danger" id="confirm-purge" type="button">Delete all worlds</button></div>
   </div></dialog>
+  <dialog id="delete-world-dialog" aria-labelledby="delete-world-title"><div class="dialog-content">
+    <div class="eyebrow">Permanently remove local save</div><h2 id="delete-world-title">Delete this world?</h2>
+    <p id="delete-world-copy"></p>
+    <p class="dialog-warning">This cannot be undone. Close any open game tabs first so they cannot save the world back.</p>
+    <div class="dialog-actions"><button class="button quiet" id="cancel-delete-world" type="button">Cancel</button><button class="button danger" id="confirm-delete-world" type="button">Delete world</button></div>
+  </div></dialog>
   <script>
     "use strict";
     const DATABASE_NAME = "_net_lax1dude_eaglercraft_v1_8_internal_PlatformFilesystem_1_12_2_";
@@ -129,6 +136,10 @@
     const purgeButton = document.querySelector("#purge-button");
     const purgeDialog = document.querySelector("#purge-dialog");
     const confirmPurgeButton = document.querySelector("#confirm-purge");
+    const deleteWorldDialog = document.querySelector("#delete-world-dialog");
+    const deleteWorldCopy = document.querySelector("#delete-world-copy");
+    const confirmDeleteWorldButton = document.querySelector("#confirm-delete-world");
+    let pendingWorldDeletion = null;
     let pendingRestore = null;
     let restoreWorker = null;
 
@@ -165,7 +176,17 @@
         const worldName = document.createElement("span"); worldName.className = "world-name"; worldName.textContent = name;
         const detail = document.createElement("span"); detail.className = "world-detail"; detail.textContent = `${details.files.toLocaleString()} files`;
         const size = document.createElement("span"); size.className = "world-size"; size.textContent = formatBytes(details.bytes);
-        row.append(worldName, detail, size); worldList.append(row);
+        const deleteButton = document.createElement("button");
+        deleteButton.className = "button quiet world-delete";
+        deleteButton.type = "button";
+        deleteButton.textContent = "Delete";
+        deleteButton.setAttribute("aria-label", `Delete world ${name}`);
+        deleteButton.addEventListener("click", () => {
+          pendingWorldDeletion = name;
+          deleteWorldCopy.textContent = `Permanently delete “${name}” and its ${details.files.toLocaleString()} saved ${details.files === 1 ? "file" : "files"}?`;
+          deleteWorldDialog.showModal();
+        });
+        row.append(worldName, detail, size, deleteButton); worldList.append(row);
       }
       if (sortedWorlds.length === 0) {
         const empty = document.createElement("div"); empty.className = "empty";
@@ -221,31 +242,83 @@
       worker.postMessage({ type: "export" });
     }
 
-    function purgeWorlds() {
-      purgeButton.disabled = true;
-      confirmPurgeButton.disabled = true;
+    function runWorldDeletion(request, successMessage) {
+      const controls = Array.from(document.querySelectorAll(".actions button, .world-delete, #confirm-purge, #confirm-delete-world"));
+      const priorDisabledStates = controls.map(button => button.disabled);
+      controls.forEach(button => { button.disabled = true; });
+      deleteWorldDialog.close();
       purgeDialog.close();
       setMessage("Deleting saved worlds in the background…");
-      const worker = new Worker("./world-vault-worker.js");
+
+      let worker;
+      try {
+        worker = new Worker("./world-vault-worker.js");
+      }catch(error) {
+        controls.forEach((button, index) => { button.disabled = priorDisabledStates[index]; });
+        setMessage(`Could not start the deletion task: ${error.message}`, "error");
+        return;
+      }
+
+      let finished = false;
+      function finish() {
+        if (finished) return;
+        finished = true;
+        worker.terminate();
+        controls.forEach((button, index) => { button.disabled = priorDisabledStates[index]; });
+      }
+
       worker.onmessage = async ({ data }) => {
         if (data.type === "status") { setMessage(data.message); return; }
-        worker.terminate();
-        purgeButton.disabled = false;
-        confirmPurgeButton.disabled = false;
-        if (data.type === "error") { setMessage(data.message, "error"); return; }
-        if (data.type === "purged") {
-          await refreshWorlds();
-          const worldLabel = data.worldCount === 1 ? "world" : "worlds";
-          setMessage(`Deleted ${data.worldCount.toLocaleString()} ${worldLabel} (${data.fileCount.toLocaleString()} world files).`, "success");
+        if (data.type === "error") {
+          finish();
+          setMessage(data.message, "error");
+          return;
         }
+        if (data.type !== "purged" && data.type !== "world-deleted") {
+          finish();
+          setMessage("The deletion task returned an unexpected response.", "error");
+          return;
+        }
+        finish();
+        const summary = await refreshWorlds();
+        if (!summary) {
+          setMessage("Deletion completed, but the updated world list could not be refreshed. Press Refresh to verify.", "error");
+          return;
+        }
+        setMessage(successMessage(data), "success");
       };
       worker.onerror = () => {
-        worker.terminate();
-        purgeButton.disabled = false;
-        confirmPurgeButton.disabled = false;
-        setMessage("The saved-world purge failed.", "error");
+        finish();
+        setMessage("The background world deletion failed.", "error");
       };
-      worker.postMessage({ type: "purge-worlds" });
+      try {
+        worker.postMessage(request);
+      }catch(error) {
+        finish();
+        setMessage(`Could not send the deletion request: ${error.message}`, "error");
+      }
+    }
+
+    function purgeWorlds() {
+      runWorldDeletion(
+        { type: "purge-worlds" },
+        data => {
+          const worldLabel = data.worldCount === 1 ? "world" : "worlds";
+          return `Deleted ${data.worldCount.toLocaleString()} ${worldLabel} (${data.fileCount.toLocaleString()} world files).`;
+        }
+      );
+    }
+
+    function deleteWorld() {
+      if (pendingWorldDeletion === null) return;
+      const name = pendingWorldDeletion;
+      pendingWorldDeletion = null;
+      runWorldDeletion(
+        { type: "delete-world", name },
+        data => data.fileCount
+          ? `Deleted “${name}” (${data.fileCount.toLocaleString()} world files).`
+          : `No saved files remained for “${name}”.`
+      );
     }
 
     function stopRestoreWorker() {
@@ -288,6 +361,11 @@
     purgeButton.addEventListener("click", () => purgeDialog.showModal());
     document.querySelector("#cancel-purge").addEventListener("click", () => purgeDialog.close());
     confirmPurgeButton.addEventListener("click", purgeWorlds);
+    document.querySelector("#cancel-delete-world").addEventListener("click", () => {
+      pendingWorldDeletion = null;
+      deleteWorldDialog.close();
+    });
+    confirmDeleteWorldButton.addEventListener("click", deleteWorld);
     document.querySelector("#cancel-repair").addEventListener("click", () => document.querySelector("#repair-dialog").close());
     document.querySelector("#repair-dialog").addEventListener("cancel", () => {});
     document.querySelector("#confirm-repair").addEventListener("click", () => {
