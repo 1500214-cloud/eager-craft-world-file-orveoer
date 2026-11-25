@@ -264,7 +264,7 @@ class RepackHandler(BaseHTTPRequestHandler):
 
                 output_path = temporary_path / "world.epk"
                 result = subprocess.run(
-                    ["java", "-jar", str(COMPILER_PATH), "epkcompiler", str(world_directory), str(output_path), compression],
+                    ["java", "-jar", str(COMPILER_PATH), "epkcompiler", str(world_directory), str(output_path), compression, "epk/world1122"],
                     capture_output=True,
                     text=True,
                     timeout=180,

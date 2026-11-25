@@ -46,7 +46,7 @@
     <section aria-labelledby="page-title">
       <p class="eyebrow">Experimental packaging</p>
       <h1 id="page-title">Repack one world</h1>
-      <p class="intro">Choose an Eaglercraft filesystem backup and package one saved world as an EPK archive. The source backup and browser saves are not changed.</p>
+      <p class="intro">Choose an Eaglercraft filesystem backup and package one saved world as an Eaglercraft 1.12.2 world EPK. The source backup and browser saves are not changed.</p>
       <form id="repack-form">
         <div class="field">
           <label for="backup-file">Filesystem backup<span class="field-note">Choose one of the JSON backups created by World Vault.</span></label>
@@ -60,9 +60,9 @@
           <label for="compression">EPK compression<span class="field-note">Gzip is a practical default.</span></label>
           <select id="compression"><option value="gzip">Gzip</option><option value="zlib">Zlib</option><option value="none">None</option></select>
         </div>
-        <div class="actions"><button id="repack-button" type="submit">Build EPK archive</button></div>
+        <div class="actions"><button id="repack-button" type="submit">Build world EPK</button></div>
       </form>
-      <p class="notice">This repacks the selected Eaglercraft world files into a generic EPK archive. It does not convert them into a vanilla Java world save, and the archive may not be directly loadable by the game as a world.</p>
+      <p class="notice">This creates an Eaglercraft 1.12.2 world EPK for in-game import. It is not a vanilla Java world save.</p>
       <progress id="repack-progress" max="100" value="0" aria-label="Backup upload progress" hidden></progress>
       <p class="status" id="status" role="status" aria-live="polite"></p>
     </section>

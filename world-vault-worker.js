@@ -139,6 +139,68 @@ async function inspectBackup(file) {
   self.postMessage({ type: "validated", summary: { worldCount: worlds.size, recordCount: records.length } });
 }
 
+function bytesFromRecordData(data) {
+  if (data instanceof ArrayBuffer) return new Uint8Array(data);
+  if (ArrayBuffer.isView(data)) return new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+  if (data && typeof data.base64 === "string") return Uint8Array.from(atob(data.base64), character => character.charCodeAt(0));
+  return null;
+}
+
+async function repairWorldList() {
+  self.postMessage({ type: "status", message: "Scanning world folders and repairing the world list…" });
+  const database = await openDatabase(false);
+  let records;
+  try {
+    const transaction = database.transaction(STORE_NAME, "readonly");
+    const request = transaction.objectStore(STORE_NAME).getAll();
+    records = await new Promise((resolve, reject) => {
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error || new Error("Could not read the filesystem records."));
+    });
+  } finally { database.close(); }
+
+  const existingFolders = new Set();
+  let priorText = "";
+  for (const value of records) {
+    if (typeof value.path !== "string") continue;
+    if (value.path === "worlds_list.txt") {
+      const bytes = bytesFromRecordData(value.data);
+      if (bytes) priorText = new TextDecoder().decode(bytes);
+      continue;
+    }
+    const match = value.path.match(/^eaglercraft\/worlds\/([^/]+)\/(.+)$/);
+    if (match && match[2]) existingFolders.add(match[1]);
+  }
+
+  const priorNames = priorText.split(/\r?\n/).map(name => name.trim()).filter(Boolean);
+  const repairedNames = [];
+  const seen = new Set();
+  for (const name of priorNames) {
+    if (existingFolders.has(name) && !seen.has(name)) { repairedNames.push(name); seen.add(name); }
+  }
+  for (const name of [...existingFolders].sort((a, b) => a.localeCompare(b))) {
+    if (!seen.has(name)) { repairedNames.push(name); seen.add(name); }
+  }
+
+  if (repairedNames.length === 0) throw new Error("No valid world folders were found to add to the world list.");
+
+  const repairedBytes = new TextEncoder().encode(repairedNames.join("\n") + "\n");
+  await openDatabase(true).then(database => new Promise((resolve, reject) => {
+    let transaction;
+    try {
+      transaction = database.transaction(STORE_NAME, "readwrite");
+      const store = transaction.objectStore(STORE_NAME);
+      store.put({ path: "worlds_list.txt", data: repairedBytes.buffer });
+    } catch (error) { database.close(); reject(error); return; }
+    transaction.oncomplete = () => { database.close(); resolve(); };
+    transaction.onerror = () => { database.close(); reject(transaction.error || new Error("Could not repair the world list.")); };
+    transaction.onabort = () => { database.close(); reject(transaction.error || new Error("The world-list repair was interrupted.")); };
+  }));
+
+  const removed = priorNames.filter(name => !existingFolders.has(name));
+  self.postMessage({ type: "repaired", repairedNames, removedNames: removed, folderCount: existingFolders.size });
+}
+
 function restoreBackup() {
   if (!pendingBackup) throw new Error("Select a valid backup before restoring.");
   self.postMessage({ type: "status", message: "Writing the snapshot into the local filesystem…" });

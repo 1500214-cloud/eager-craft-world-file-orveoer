@@ -63,13 +63,16 @@
       <a class="brand" href="#" aria-label="World Vault home"><span class="brand-mark" aria-hidden="true">WV</span><span><span class="brand-name">World Vault</span><span class="brand-subtitle">Eaglercraft 1.12.2</span></span></a>
       <div><div class="rail-label">Workspace</div><nav class="rail-nav" aria-label="Workspace">
         <a class="nav-item" href="#worlds" aria-current="page"><span class="nav-glyph" aria-hidden="true">▦</span>World backups</a>
-        <a class="nav-item" href="./Eaglercraft%201.12.2%20u3%20WASM-GC.html" target="_blank" rel="noopener"><span class="nav-glyph" aria-hidden="true">▶</span>Create / play world</a>
+        <a class="nav-item" href="./Eaglercraft%201.12.2%20u3%20WASM-GC.html" target="_blank" rel="noopener"><span class="nav-glyph" aria-hidden="true">▶</span>U3 WASM-GC</a>
+        <a class="nav-item" href="./experiment.html" target="_blank" rel="noopener"><span class="nav-glyph" aria-hidden="true">◇</span>Experiment client</a>
+        <a class="nav-item" href="http://localhost:8001/" target="_blank" rel="noopener"><span class="nav-glyph" aria-hidden="true">⇄</span>EPK repacker</a>
       </nav></div>
       <div class="rail-bottom"><div class="connection"><div class="connection-state"><span class="status-dot" id="status-dot"></span><span id="connection-title">Checking local saves</span></div><div class="connection-copy" id="connection-copy">Looking for the Eaglercraft filesystem on this site.</div></div></div>
     </aside>
     <main>
       <header class="topbar"><div class="topbar-note">LOCAL SAVE MANAGER <span aria-hidden="true">/</span> NO UPLOADS</div><div class="actions">
         <button class="button quiet" id="refresh-button" type="button" title="Refresh saved worlds"><span class="icon" aria-hidden="true">↻</span>Refresh</button>
+        <button class="button" id="repair-button" type="button" title="Remove stale names from the world list"><span class="icon" aria-hidden="true">⌁</span>Repair world list</button>
         <button class="button" id="restore-button" type="button" title="Restore a platform filesystem backup"><span class="icon" aria-hidden="true">↑</span>Restore backup</button>
         <button class="button primary" id="backup-button" type="button" title="Download a backup of all Eaglercraft files"><span class="icon" aria-hidden="true">↓</span>Back up all</button>
       </div></header>
@@ -89,6 +92,12 @@
     </main>
   </div>
   <input id="backup-file" type="file" accept=".json,application/json" hidden>
+  <dialog id="repair-dialog" aria-labelledby="repair-title"><div class="dialog-content">
+    <div class="eyebrow">Repair world-list metadata</div><h2 id="repair-title">Remove stale world names?</h2>
+    <p>This keeps all world folders and files. It rewrites only <code>worlds_list.txt</code> so it contains names that have matching world folders.</p>
+    <p class="dialog-warning">Download “Back up all” first if you have not already made a fresh snapshot.</p>
+    <div class="dialog-actions"><button class="button quiet" id="cancel-repair" type="button">Cancel</button><button class="button primary" id="confirm-repair" type="button">Repair list</button></div>
+  </div></dialog>
   <dialog id="restore-dialog" aria-labelledby="restore-title"><div class="dialog-content">
     <div class="eyebrow">Replace local filesystem</div><h2 id="restore-title">Restore this snapshot?</h2><p id="restore-summary"></p>
     <p class="dialog-warning">This replaces the current Eaglercraft filesystem, including all worlds and settings. Download a backup first if you may need these saves. Close the game tab before restoring, then reload it afterward.</p>
@@ -237,6 +246,29 @@
 
     backupButton.addEventListener("click", downloadBackup);
     document.querySelector("#refresh-button").addEventListener("click", refreshWorlds);
+    document.querySelector("#repair-button").addEventListener("click", () => document.querySelector("#repair-dialog").showModal());
+    document.querySelector("#cancel-repair").addEventListener("click", () => document.querySelector("#repair-dialog").close());
+    document.querySelector("#repair-dialog").addEventListener("cancel", () => {});
+    document.querySelector("#confirm-repair").addEventListener("click", () => {
+      const dialog = document.querySelector("#repair-dialog");
+      const button = document.querySelector("#confirm-repair");
+      button.disabled = true;
+      dialog.close();
+      setMessage("Repairing the world list in the background…");
+      const worker = new Worker("./world-vault-worker.js");
+      worker.onmessage = ({ data }) => {
+        if (data.type === "status") { setMessage(data.message); return; }
+        worker.terminate(); button.disabled = false;
+        if (data.type === "error") { setMessage(data.message, "error"); return; }
+        if (data.type === "repaired") {
+          const removedCount = data.removedNames.length;
+          setMessage(`World list repaired: ${data.folderCount} valid folders kept; ${removedCount} stale ${removedCount === 1 ? "name" : "names"} removed. Close U3, reload it once, and wait up to 5 minutes.`, "success");
+          refreshWorlds();
+        }
+      };
+      worker.onerror = () => { worker.terminate(); button.disabled = false; setMessage("The world-list repair failed.", "error"); };
+      worker.postMessage({ type: "repair-world-list" });
+    });
     restoreButton.addEventListener("click", () => backupFile.click());
     document.querySelector("#cancel-restore").addEventListener("click", () => { stopRestoreWorker(); restoreDialog.close(); });
     restoreDialog.addEventListener("cancel", stopRestoreWorker);
