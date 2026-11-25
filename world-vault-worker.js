@@ -67,6 +67,51 @@ async function summarizeDatabase() {
   return { worlds: [...worlds.entries()], worldFiles, totalBytes, recordCount: records.length };
 }
 
+async function purgeWorlds() {
+  self.postMessage({ type: "status", message: "Deleting saved world files…" });
+  const database = await openDatabase();
+  return new Promise((resolve, reject) => {
+    let transaction;
+    let fileCount = 0;
+    const worlds = new Set();
+    try {
+      transaction = database.transaction(STORE_NAME, "readwrite");
+      const request = transaction.objectStore(STORE_NAME).openCursor();
+      request.onsuccess = () => {
+        const cursor = request.result;
+        if (!cursor) return;
+        const path = cursor.value && cursor.value.path;
+        const match = typeof path === "string" && path.match(/^eaglercraft\/worlds\/([^/]+)\//);
+        if (path === "worlds_list.txt" || match) {
+          cursor.delete();
+          if (match) {
+            worlds.add(match[1]);
+            fileCount += 1;
+          }
+        }
+        cursor.continue();
+      };
+    } catch (error) {
+      database.close();
+      reject(error);
+      return;
+    }
+    transaction.oncomplete = () => {
+      database.close();
+      self.postMessage({ type: "purged", worldCount: worlds.size, fileCount });
+      resolve();
+    };
+    transaction.onerror = () => {
+      database.close();
+      reject(transaction.error || new Error("Could not delete the saved worlds."));
+    };
+    transaction.onabort = () => {
+      database.close();
+      reject(transaction.error || new Error("The saved-world purge was interrupted."));
+    };
+  });
+}
+
 function bytesFromData(data) {
   if (data instanceof ArrayBuffer) return new Uint8Array(data);
   if (ArrayBuffer.isView(data)) return new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
@@ -226,6 +271,7 @@ self.addEventListener("message", async ({ data }) => {
     if (data.type === "export") await exportBackup();
     else if (data.type === "inspect") await inspectBackup(data.file);
     else if (data.type === "restore") await restoreBackup();
+    else if (data.type === "purge-worlds") await purgeWorlds();
     else if (data.type === "summarize") self.postMessage({ type: "summarized", summary: await summarizeDatabase() });
   } catch (error) {
     self.postMessage({ type: "error", message: error.message || "The background filesystem task failed." });

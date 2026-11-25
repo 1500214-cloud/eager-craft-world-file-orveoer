@@ -30,6 +30,7 @@
     .topbar-note { color:var(--muted); font:11px var(--mono); } .actions { display:flex; flex-wrap:wrap; gap:9px; }
     .button { display:inline-flex; min-height:40px; align-items:center; justify-content:center; gap:8px; padding:0 14px; border:1px solid #536044; background:#283023; color:var(--accent); cursor:pointer; text-decoration:none; transition:background 140ms ease,border-color 140ms ease,transform 140ms ease; }
     .button:hover { border-color:var(--accent); background:#323d28; transform:translateY(-1px); } .button.primary { border-color:var(--accent); background:var(--accent); color:#20251a; font-weight:700; } .button.primary:hover { background:#d3ff7e; }
+    .button.danger { border-color:#8a4941; background:#382522; color:#ff9b8e; } .button.danger:hover { border-color:var(--red); background:#472b27; }
     .button.quiet { border-color:var(--line); background:transparent; color:var(--ink); } .button:disabled { cursor:wait; opacity:.55; transform:none; } .button .icon { font:15px var(--mono); }
     .heading { display:flex; align-items:end; justify-content:space-between; gap:20px; margin:34px 0 23px; }
     h1 { margin:7px 0 0; font:400 clamp(30px,4vw,43px)/1.08 Georgia,serif; letter-spacing:0; } .heading-note { max-width:430px; margin:0; color:var(--muted); }
@@ -73,6 +74,7 @@
       <header class="topbar"><div class="topbar-note">LOCAL SAVE MANAGER <span aria-hidden="true">/</span> NO UPLOADS</div><div class="actions">
         <button class="button quiet" id="refresh-button" type="button" title="Refresh saved worlds"><span class="icon" aria-hidden="true">↻</span>Refresh</button>
         <button class="button" id="repair-button" type="button" title="Remove stale names from the world list"><span class="icon" aria-hidden="true">⌁</span>Repair world list</button>
+        <button class="button danger" id="purge-button" type="button" title="Permanently delete all saved worlds"><span class="icon" aria-hidden="true">×</span>Delete all worlds</button>
         <button class="button" id="restore-button" type="button" title="Restore a platform filesystem backup"><span class="icon" aria-hidden="true">↑</span>Restore backup</button>
         <button class="button primary" id="backup-button" type="button" title="Download a backup of all Eaglercraft files"><span class="icon" aria-hidden="true">↓</span>Back up all</button>
       </div></header>
@@ -103,6 +105,12 @@
     <p class="dialog-warning">This replaces the current Eaglercraft filesystem, including all worlds and settings. Download a backup first if you may need these saves. Close the game tab before restoring, then reload it afterward.</p>
     <div class="dialog-actions"><button class="button quiet" id="cancel-restore" type="button">Cancel</button><button class="button primary" id="confirm-restore" type="button">Replace and restore</button></div>
   </div></dialog>
+  <dialog id="purge-dialog" aria-labelledby="purge-title"><div class="dialog-content">
+    <div class="eyebrow">Permanently remove local saves</div><h2 id="purge-title">Delete all saved worlds?</h2>
+    <p>This permanently deletes every Eaglercraft 1.12.2 world stored on this site. Other filesystem data and settings are kept.</p>
+    <p class="dialog-warning">Close any open game tabs first so they cannot save worlds back after deletion. This cannot be undone; download a backup first if you may want these worlds later.</p>
+    <div class="dialog-actions"><button class="button quiet" id="cancel-purge" type="button">Cancel</button><button class="button danger" id="confirm-purge" type="button">Delete all worlds</button></div>
+  </div></dialog>
   <script>
     "use strict";
     const DATABASE_NAME = "_net_lax1dude_eaglercraft_v1_8_internal_PlatformFilesystem_1_12_2_";
@@ -118,6 +126,9 @@
     const backupFile = document.querySelector("#backup-file");
     const restoreDialog = document.querySelector("#restore-dialog");
     const restoreSummary = document.querySelector("#restore-summary");
+    const purgeButton = document.querySelector("#purge-button");
+    const purgeDialog = document.querySelector("#purge-dialog");
+    const confirmPurgeButton = document.querySelector("#confirm-purge");
     let pendingRestore = null;
     let restoreWorker = null;
 
@@ -210,6 +221,33 @@
       worker.postMessage({ type: "export" });
     }
 
+    function purgeWorlds() {
+      purgeButton.disabled = true;
+      confirmPurgeButton.disabled = true;
+      purgeDialog.close();
+      setMessage("Deleting saved worlds in the background…");
+      const worker = new Worker("./world-vault-worker.js");
+      worker.onmessage = async ({ data }) => {
+        if (data.type === "status") { setMessage(data.message); return; }
+        worker.terminate();
+        purgeButton.disabled = false;
+        confirmPurgeButton.disabled = false;
+        if (data.type === "error") { setMessage(data.message, "error"); return; }
+        if (data.type === "purged") {
+          await refreshWorlds();
+          const worldLabel = data.worldCount === 1 ? "world" : "worlds";
+          setMessage(`Deleted ${data.worldCount.toLocaleString()} ${worldLabel} (${data.fileCount.toLocaleString()} world files).`, "success");
+        }
+      };
+      worker.onerror = () => {
+        worker.terminate();
+        purgeButton.disabled = false;
+        confirmPurgeButton.disabled = false;
+        setMessage("The saved-world purge failed.", "error");
+      };
+      worker.postMessage({ type: "purge-worlds" });
+    }
+
     function stopRestoreWorker() {
       if (restoreWorker) restoreWorker.terminate();
       restoreWorker = null; pendingRestore = null;
@@ -247,6 +285,9 @@
     backupButton.addEventListener("click", downloadBackup);
     document.querySelector("#refresh-button").addEventListener("click", refreshWorlds);
     document.querySelector("#repair-button").addEventListener("click", () => document.querySelector("#repair-dialog").showModal());
+    purgeButton.addEventListener("click", () => purgeDialog.showModal());
+    document.querySelector("#cancel-purge").addEventListener("click", () => purgeDialog.close());
+    confirmPurgeButton.addEventListener("click", purgeWorlds);
     document.querySelector("#cancel-repair").addEventListener("click", () => document.querySelector("#repair-dialog").close());
     document.querySelector("#repair-dialog").addEventListener("cancel", () => {});
     document.querySelector("#confirm-repair").addEventListener("click", () => {
